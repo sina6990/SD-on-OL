@@ -109,9 +109,9 @@
                 "population": 490517,
                 "householdIncome": "122200 AUD"
             },
-            "Gold Coast": {
-                "population": 693596,
-                "householdIncome": "85124 AUD"
+            "Hobart": {
+                "population": 247086,
+                "householdIncome": "80184 AUD"
             }
         },
         "Source": [
@@ -120,7 +120,7 @@
             "https://www.abs.gov.au/census/find-census-data/quickstats/2021/5GPER",
             "https://www.abs.gov.au/census/find-census-data/quickstats/2021/4GADE",
             "https://www.abs.gov.au/census/find-census-data/quickstats/2021/8001",
-            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/3007",
+            "https://abs.gov.au/census/find-census-data/quickstats/2021/6GHOB",
             2021
         ]
     }
