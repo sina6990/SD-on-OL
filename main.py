@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import random
 from dataclasses import dataclass
 from datasets import load_dataset
 from pathlib import Path
@@ -105,63 +106,6 @@ class SESBiasExperiment:
             " Non-hate includes neutral mentions and context quoting without endorsement."
         )
 
-    # ---------- Prompting ----------
-
-    def zeroshot_prompting(self, dialogue: str) -> str:
-        """
-        Build a zero-shot classification prompt.
-        """
-        return self._format_prompt(header="Zero-shot classification", dialogue=dialogue)
-
-    # def fewshot_prompting(
-    #     self,
-    #     manip_examples: Sequence[Example],
-    #     nonmanip_examples: Sequence[Example],
-    #     dialogue: str,
-    # ) -> str:
-    #     """
-    #     Build a few-shot prompt with balanced positive and negative examples.
-    #     """
-    #     shots = []
-    #     for ex in manip_examples:
-    #         shots.append(self._format_single_example(ex, label=1))
-    #     for ex in nonmanip_examples:
-    #         shots.append(self._format_single_example(ex, label=0))
-
-    #     exemplars = "\n\n".join(shots)
-    #     body = (
-    #         f"{self.system_preamble}\n\n"
-    #         f"{self.class_def}\n\n"
-    #         f"Here are labeled examples:\n{exemplars}\n\n"
-    #         f"Now classify the final sample.\n"
-    #         f"{dialogue}\n\n"
-    #         "Return only JSON like: {\"label\": 0 or 1, \"reason\": \"...\"}"
-    #     )
-    #     return body
-
-    def _format_prompt(self, header: str, dialogue: str) -> str:
-        return (
-            f"{self.system_preamble}\n\n"
-            f"{self.class_def}\n\n"
-            f"{header}\n"
-            f"{dialogue}\n\n"
-            "Return only JSON like: {\"label\": 0 or 1, \"reason\": \"...\"}"
-        )
-
-    # def _format_single_example(self, ex: Example, label: int) -> str:
-    #     if self.prompt_style == "explicit_city":
-    #         assert ex.city, "city is required for explicit_city examples"
-    #         prefix = f"The person living in {ex.city} said: {ex.text}"
-    #     else:
-    #         assert ex.msa_population is not None and ex.msa_income is not None, \
-    #             "msa_population and msa_income are required for implicit_msa examples"
-    #         prefix = (
-    #             "The person living in the metropolitan statistical area that has "
-    #             f"{ex.msa_population} people and an average household income of "
-    #             f"{ex.msa_income} dollars said: {ex.text}"
-    #         )
-    #     return f"Example:\nInput: {prefix}\nOutput: {{\"label\": {label}, \"reason\": \"given\"}}"
-
     # ---------- Data reading ----------
     
     @staticmethod
@@ -219,35 +163,6 @@ class SESBiasExperiment:
                 label = "1" if float(score) > threshold else "0"
                 rows.append({"text": text, "label": label})
             return rows
-
-    # @staticmethod
-    # def read_city_data(file_name: Optional[Path]) -> Dict[str, Tuple[int, int]]:
-    #     """
-    #     Reads city metadata. Returns mapping:
-    #         city -> (msa_population, msa_income)
-    #     Expected columns:
-    #         city, msa_population, msa_income
-    #     Values are coerced to int. Rows with missing values are skipped.
-    #     """
-    #     print("DEBUG_POINT", inspect.currentframe().f_lineno)
-    #     if file_name is None:
-    #         return {}
-    #     mapping: Dict[str, Tuple[int, int]] = {}
-    #     with open(file_name, newline="", encoding="utf-8") as f:
-    #         reader = csv.DictReader(f)
-    #         required = {"city", "msa_population", "msa_income"}
-    #         missing = required - set(reader.fieldnames or [])
-    #         if missing:
-    #             raise ValueError(f"Missing required columns in city data: {missing}")
-    #         for r in reader:
-    #             try:
-    #                 city = r["city"]
-    #                 pop = int(r["msa_population"])
-    #                 inc = int(r["msa_income"])
-    #                 mapping[city] = (pop, inc)
-    #             except Exception:
-    #                 continue
-    #     return mapping
 
     def create_augmented_examples(
         self,
@@ -377,10 +292,37 @@ class SESBiasExperiment:
 
 # ---------------- CLI ----------------
 
-# def _choose_fewshot(examples: List[Example], k_pos: int = 3, k_neg: int = 3) -> Tuple[List[Example], List[Example]]:
-#     pos = [e for e in examples if e.label == 1][:k_pos]
-#     neg = [e for e in examples if e.label == 0][:k_neg]
-#     return pos, neg
+def _choose_fewshot(
+    examples: List[Dict],
+    num_per_class: int = 3,
+    seed: int = 42
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Choose a few-shot balanced set from the augmented dataset.
+
+    Args:
+        examples: List of dicts with keys {"prompt", "label"}.
+        num_per_class: Number of examples to select for each label (0 and 1).
+        seed: Random seed for reproducibility.
+
+    Returns:
+        few_pos: List of positive examples (label=1)
+        few_neg: List of negative examples (label=0)
+    """
+    random.seed(seed)
+
+    # Separate by label
+    positives = [ex for ex in examples if ex["label"] == 1]
+    negatives = [ex for ex in examples if ex["label"] == 0]
+
+    # Shuffle and pick desired amount
+    random.shuffle(positives)
+    random.shuffle(negatives)
+
+    few_pos = positives[:num_per_class]
+    few_neg = negatives[:num_per_class]
+
+    return few_pos, few_neg
 
 
 def main():
@@ -431,16 +373,16 @@ def main():
     examples = exp.create_augmented_examples(base_data, city_data)
 
     # 4. Optional: select few-shot seeds
-    # few_pos, few_neg = [], []
-    # if args.shot_mode == "few":
-    #     few_pos, few_neg = _choose_fewshot(examples)
+    few_pos, few_neg = [], []
+    if args.shot_mode == "few":
+        few_pos, few_neg = _choose_fewshot(examples)
 
     # 5. Run predictions
     preds, targets = exp.prediction(
         data=examples,
         shot_mode=args.shot_mode,
-        # few_pos=few_pos,
-        # few_neg=few_neg,
+        few_pos=few_pos,
+        few_neg=few_neg,
     )
 
     # 6. Evaluate
