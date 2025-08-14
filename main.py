@@ -1,23 +1,15 @@
 # Purpose: Run zero-shot and few-shot LLM classification experiments that test whether
-#          explicit or implicit socioeconomic cues (city names or MSA-style tuples)
-#          affect hate-speech classification.
+#          explicit or implicit socioeconomic cues affect hate-speech classification.
 #
-# Usage example (CLI):
-#   python main.py \
-#       --base_data data/base_dataset.csv \
-#       --city_data data/city_metadata.csv \
-#       --prompt_style explicit_city \
-#       --model_name "qwen2.5-14b-instruct" \
-#       --api_key "$OLLAMA" \
-#       --out_json results/metrics.json
 #
 # Notes:
-# - base_dataset.csv columns: id,text,label,city (label in {0,1}; city optional if using implicit MSA)
-# - city_metadata.csv columns: city,msa_population,msa_income
 # - The model wrapper supports both chat and completion endpoints through LangChain.
 # - All generation prompts ask for a strict JSON answer with fields: label (0|1) and reason.
 
 from __future__ import annotations
+
+# Debugging
+import inspect
 
 import argparse
 import csv
@@ -26,10 +18,10 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datasets import load_dataset
 from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
-from langchain.chat_models import ChatOpenAI
-from langchain.llms import OpenAI
+from langchain_openai import ChatOpenAI, OpenAI
 from langchain.schema import HumanMessage
 
 # Metrics
@@ -42,7 +34,7 @@ from sklearn.metrics import (
 )
 
 
-PromptStyle = Literal["explicit_city", "implicit_msa"]
+PromptStyle = Literal["explicit", "implicit"]
 
 
 class AnyOpenAILLM:
@@ -54,10 +46,10 @@ class AnyOpenAILLM:
     def __init__(self, *args, **kwargs):
         self.model_type = kwargs.get("model_type", "chat")
         model_name = kwargs.get("model_name")
-        api_key = kwargs.get("api_key", os.getenv("OPENAI_API_KEY", ""))
+        api_key = kwargs.get("api_key", "ollama")
         api_base = kwargs.get("api_base", "http://localhost:1234/v1")
         temperature = kwargs.get("temperature", 0)
-        max_tokens = kwargs.get("max_tokens", 2048)
+        max_tokens = kwargs.get("max_tokens", 10048)
         model_kwargs = kwargs.get("model_kwargs", {})
 
         if self.model_type == "completion":
@@ -84,16 +76,6 @@ class AnyOpenAILLM:
             return str(self.model(prompt))
         else:
             return str(self.model([HumanMessage(content=prompt)]).content)
-
-
-@dataclass
-class Example:
-    text: str
-    label: int  # 0 or 1
-    city: Optional[str] = None  # required for explicit_city if you vary by city
-    msa_population: Optional[int] = None  # required for implicit_msa
-    msa_income: Optional[int] = None      # required for implicit_msa
-
 
 class SESBiasExperiment:
     """
@@ -131,31 +113,31 @@ class SESBiasExperiment:
         """
         return self._format_prompt(header="Zero-shot classification", dialogue=dialogue)
 
-    def fewshot_prompting(
-        self,
-        manip_examples: Sequence[Example],
-        nonmanip_examples: Sequence[Example],
-        dialogue: str,
-    ) -> str:
-        """
-        Build a few-shot prompt with balanced positive and negative examples.
-        """
-        shots = []
-        for ex in manip_examples:
-            shots.append(self._format_single_example(ex, label=1))
-        for ex in nonmanip_examples:
-            shots.append(self._format_single_example(ex, label=0))
+    # def fewshot_prompting(
+    #     self,
+    #     manip_examples: Sequence[Example],
+    #     nonmanip_examples: Sequence[Example],
+    #     dialogue: str,
+    # ) -> str:
+    #     """
+    #     Build a few-shot prompt with balanced positive and negative examples.
+    #     """
+    #     shots = []
+    #     for ex in manip_examples:
+    #         shots.append(self._format_single_example(ex, label=1))
+    #     for ex in nonmanip_examples:
+    #         shots.append(self._format_single_example(ex, label=0))
 
-        exemplars = "\n\n".join(shots)
-        body = (
-            f"{self.system_preamble}\n\n"
-            f"{self.class_def}\n\n"
-            f"Here are labeled examples:\n{exemplars}\n\n"
-            f"Now classify the final sample.\n"
-            f"{dialogue}\n\n"
-            "Return only JSON like: {\"label\": 0 or 1, \"reason\": \"...\"}"
-        )
-        return body
+    #     exemplars = "\n\n".join(shots)
+    #     body = (
+    #         f"{self.system_preamble}\n\n"
+    #         f"{self.class_def}\n\n"
+    #         f"Here are labeled examples:\n{exemplars}\n\n"
+    #         f"Now classify the final sample.\n"
+    #         f"{dialogue}\n\n"
+    #         "Return only JSON like: {\"label\": 0 or 1, \"reason\": \"...\"}"
+    #     )
+    #     return body
 
     def _format_prompt(self, header: str, dialogue: str) -> str:
         return (
@@ -166,53 +148,21 @@ class SESBiasExperiment:
             "Return only JSON like: {\"label\": 0 or 1, \"reason\": \"...\"}"
         )
 
-    def _format_single_example(self, ex: Example, label: int) -> str:
-        if self.prompt_style == "explicit_city":
-            assert ex.city, "city is required for explicit_city examples"
-            prefix = f"The person living in {ex.city} said: {ex.text}"
-        else:
-            assert ex.msa_population is not None and ex.msa_income is not None, \
-                "msa_population and msa_income are required for implicit_msa examples"
-            prefix = (
-                "The person living in the metropolitan statistical area that has "
-                f"{ex.msa_population} people and an average household income of "
-                f"{ex.msa_income} dollars said: {ex.text}"
-            )
-        return f"Example:\nInput: {prefix}\nOutput: {{\"label\": {label}, \"reason\": \"given\"}}"
+    # def _format_single_example(self, ex: Example, label: int) -> str:
+    #     if self.prompt_style == "explicit_city":
+    #         assert ex.city, "city is required for explicit_city examples"
+    #         prefix = f"The person living in {ex.city} said: {ex.text}"
+    #     else:
+    #         assert ex.msa_population is not None and ex.msa_income is not None, \
+    #             "msa_population and msa_income are required for implicit_msa examples"
+    #         prefix = (
+    #             "The person living in the metropolitan statistical area that has "
+    #             f"{ex.msa_population} people and an average household income of "
+    #             f"{ex.msa_income} dollars said: {ex.text}"
+    #         )
+    #     return f"Example:\nInput: {prefix}\nOutput: {{\"label\": {label}, \"reason\": \"given\"}}"
 
     # ---------- Data reading ----------
-
-    def read_data(
-        self,
-        base_file: Path,
-        city_file: Optional[Path] = None,
-    ) -> List[Example]:
-        base = self.read_base_data(base_file)
-        city_map = {}
-        if city_file:
-            ext = str(city_file).lower().split('.')[-1]
-            if ext == "json":
-                city_map = self.read_city_data_json(city_file)
-            else:
-                city_map = self.read_city_data(city_file)
-        merged: List[Example] = []
-
-        for row in base:
-            city = row.get("city") or None
-            msa_population, msa_income = None, None
-            if city and city_map.get(city):
-                msa_population, msa_income = city_map[city]
-
-            merged.append(
-                Example(
-                    text=row["text"],
-                    label=int(row["label"]),
-                    city=city,
-                    msa_population=msa_population,
-                    msa_income=msa_income,
-                )
-            )
-        return merged
     
     @staticmethod
     def read_city_data_json(file_name: Optional[Path]) -> Dict[str, Tuple[int, int]]:
@@ -225,104 +175,133 @@ class SESBiasExperiment:
         mapping: Dict[str, Tuple[int, int]] = {}
         with open(file_name, encoding="utf-8") as f:
             data = json.load(f)
+        print("Loaded JSON keys:", list(data.keys()))
         # Traverse countries and sizes
-        for country in data.values():
+        for country_name, country in data.items():
+            print(f"Country: {country_name}")
             for size, cities in country.items():
+                print(f"  Size: {size}")
                 if size == "Source":
                     continue
                 if isinstance(cities, dict):
                     for city, info in cities.items():
+                        print(f"    City: {city}, Info: {info}")
                         try:
                             pop = int(info["population"])
-                            # Remove currency and commas from income
                             income_str = info["householdIncome"]
                             income_num = int(''.join(filter(str.isdigit, income_str)))
                             mapping[city] = (pop, income_num)
-                        except Exception:
+                        except Exception as e:
+                            print(f"      Skipped {city} due to error: {e}")
                             continue
+        print("Final mapping:", mapping)
         return mapping
 
     @staticmethod
-    def read_base_data(file_name: Path) -> List[Dict[str, str]]:
-        """
-        Expected columns:
-          - id (optional)
-          - text (string)
-          - label (0 or 1)
-          - city (optional; used by explicit_city and by implicit_msa to look up MSA tuple)
-        """
-        rows: List[Dict[str, str]] = []
-        with open(file_name, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            required = {"text", "label"}
-            missing = required - set(reader.fieldnames or [])
-            if missing:
-                raise ValueError(f"Missing required columns in base data: {missing}")
-            for r in reader:
-                rows.append(r)
-        return rows
+    def read_base_data(dataset_name: str = "ucberkeley-dlab/measuring-hate-speech",
+            split: str = "train",
+            threshold: float = 0.5,
+        ) -> List[Dict[str, str]]:
+            """
+            Returns rows shaped like the CSV loader:
+            - text (string)
+            - label ("0" or "1" as strings, to match your existing type hints)
+            """
+            print("DEBUG_POINT", inspect.currentframe().f_lineno)
+            ds = load_dataset(dataset_name, split=split)
 
-    @staticmethod
-    def read_city_data(file_name: Optional[Path]) -> Dict[str, Tuple[int, int]]:
+            rows: List[Dict[str, str]] = []
+            for r in ds:
+                text = r.get("text")
+                score = r.get("hate_speech_score")
+                if text is None or score is None:
+                    continue  # skip incomplete rows
+                label = "1" if float(score) > threshold else "0"
+                rows.append({"text": text, "label": label})
+            return rows
+
+    # @staticmethod
+    # def read_city_data(file_name: Optional[Path]) -> Dict[str, Tuple[int, int]]:
+    #     """
+    #     Reads city metadata. Returns mapping:
+    #         city -> (msa_population, msa_income)
+    #     Expected columns:
+    #         city, msa_population, msa_income
+    #     Values are coerced to int. Rows with missing values are skipped.
+    #     """
+    #     print("DEBUG_POINT", inspect.currentframe().f_lineno)
+    #     if file_name is None:
+    #         return {}
+    #     mapping: Dict[str, Tuple[int, int]] = {}
+    #     with open(file_name, newline="", encoding="utf-8") as f:
+    #         reader = csv.DictReader(f)
+    #         required = {"city", "msa_population", "msa_income"}
+    #         missing = required - set(reader.fieldnames or [])
+    #         if missing:
+    #             raise ValueError(f"Missing required columns in city data: {missing}")
+    #         for r in reader:
+    #             try:
+    #                 city = r["city"]
+    #                 pop = int(r["msa_population"])
+    #                 inc = int(r["msa_income"])
+    #                 mapping[city] = (pop, inc)
+    #             except Exception:
+    #                 continue
+    #     return mapping
+
+    def create_augmented_examples(
+        self,
+        base_data: List[Dict],
+        city_data: Dict[str, Tuple[int, int]]
+    ) -> List[Dict]:
         """
-        Reads city metadata. Returns mapping:
-            city -> (msa_population, msa_income)
-        Expected columns:
-            city, msa_population, msa_income
-        Values are coerced to int. Rows with missing values are skipped.
+        Create augmented dataset by pairing each base sample with each city
+        and formatting prompts according to the selected style.
+        
+        Args:
+            base_data: List of dicts with keys {"text", "label"}
+            city_data: Dict {city_name: (population, income)}
+        
+        Returns:
+            List[Dict] with keys {"prompt", "label"}
         """
-        if file_name is None:
-            return {}
-        mapping: Dict[str, Tuple[int, int]] = {}
-        with open(file_name, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            required = {"city", "msa_population", "msa_income"}
-            missing = required - set(reader.fieldnames or [])
-            if missing:
-                raise ValueError(f"Missing required columns in city data: {missing}")
-            for r in reader:
-                try:
-                    city = r["city"]
-                    pop = int(r["msa_population"])
-                    inc = int(r["msa_income"])
-                    mapping[city] = (pop, inc)
-                except Exception:
-                    continue
-        return mapping
+        augmented = []
+
+        for sample in base_data:
+            text = sample["text"]
+            label = sample["label"]
+
+            for city, (population, income) in city_data.items():
+                if self.prompt_style == "explicit":
+                    prompt = f"The person living in {city} said: {text}"
+                elif self.prompt_style == "implicit":
+                    prompt = (
+                        f"The person living in the metropolitan statistical area "
+                        f"that has {population} people and an average household income of "
+                        f"{income} dollars said: {text}"
+                    )
+                else:
+                    raise ValueError(f"Unknown prompt style: {self.prompt_style}")
+
+                augmented.append({
+                    "prompt": prompt,
+                    "label": label
+                })
+
+        return augmented
 
     # ---------- Prediction ----------
 
-    def build_dialogue(self, sample: Example) -> str:
+    def build_dialogue(self,) -> str:
         """
         Constructs the input string according to the selected prompt style.
         """
-        if self.prompt_style == "explicit_city":
-            if not sample.city:
-                raise ValueError("Sample missing 'city' for explicit_city style.")
-            return f"The person living in {sample.city} said: {sample.text}"
 
-        # implicit_msa
-        if sample.msa_population is None or sample.msa_income is None:
-            raise ValueError("Sample missing MSA tuple for implicit_msa style.")
-        return (
-            "The person living in the metropolitan statistical area that has "
-            f"{sample.msa_population} people and an average household income of "
-            f"{sample.msa_income} dollars said: {sample.text}"
-        )
-
-    def predict_one(self, sample: Example, shot_mode: Literal["zero", "few"] = "zero",
-                    few_pos: Sequence[Example] = (), few_neg: Sequence[Example] = ()) -> int:
+    def predict_one(self, ):
         """
         Gets a single prediction. Returns 0 or 1.
         """
-        dialogue = self.build_dialogue(sample)
-        if shot_mode == "zero":
-            prompt = self.zeroshot_prompting(dialogue)
-        else:
-            prompt = self.fewshot_prompting(few_pos, few_neg, dialogue)
-
-        raw = self.model(prompt)
-        return self._postprocess_label(raw)
+        return # Return something here
 
     @staticmethod
     def _postprocess_label(model_output: str) -> int:
@@ -355,20 +334,8 @@ class SESBiasExperiment:
 
     # ---------- Batch prediction and evaluation ----------
 
-    def prediction(
-        self,
-        data: Sequence[Example],
-        shot_mode: Literal["zero", "few"] = "zero",
-        few_pos: Sequence[Example] = (),
-        few_neg: Sequence[Example] = (),
-    ) -> Tuple[List[int], List[int]]:
-        preds: List[int] = []
-        targets: List[int] = []
-        for ex in data:
-            yhat = self.predict_one(ex, shot_mode=shot_mode, few_pos=few_pos, few_neg=few_neg)
-            preds.append(yhat)
-            targets.append(ex.label)
-        return preds, targets
+    def prediction():
+            return #preds, targets
 
     @staticmethod
     def evaluate(processed_preds: Sequence[int], processed_targets: Sequence[int], json_filename: Path) -> Dict[str, object]:
@@ -410,25 +377,25 @@ class SESBiasExperiment:
 
 # ---------------- CLI ----------------
 
-def _choose_fewshot(examples: List[Example], k_pos: int = 3, k_neg: int = 3) -> Tuple[List[Example], List[Example]]:
-    pos = [e for e in examples if e.label == 1][:k_pos]
-    neg = [e for e in examples if e.label == 0][:k_neg]
-    return pos, neg
+# def _choose_fewshot(examples: List[Example], k_pos: int = 3, k_neg: int = 3) -> Tuple[List[Example], List[Example]]:
+#     pos = [e for e in examples if e.label == 1][:k_pos]
+#     neg = [e for e in examples if e.label == 0][:k_neg]
+#     return pos, neg
 
 
 def main():
     parser = argparse.ArgumentParser(description="SES bias experiment for hate-speech classification")
-    parser.add_argument("--base_data", type=Path, required=True, help="CSV with text,label[,city]")
-    parser.add_argument("--city_data", type=Path, required=False, help="CSV with city,msa_population,msa_income")
-    parser.add_argument("--prompt_style", choices=["explicit_city", "implicit_msa"], required=True)
+    parser.add_argument("--base_data", type=Path, required=False, help="base hate speach dataset -string -label")
+    parser.add_argument("--city_data", type=Path, default=Path("MSAs.json"), help="City/MSA data JSON file (default: MSAs.json)")
+    parser.add_argument("--prompt_style", choices=["explicit", "implicit"], default="implicit")
     parser.add_argument("--shot_mode", choices=["zero", "few"], default="zero")
-    parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--api_key", type=str, default=os.getenv("OPENAI_API_KEY", ""))
+    parser.add_argument("--model_name", type=str, default="openai/gpt-oss-20b")
+    parser.add_argument("--api_key", type=str, default=os.getenv("api_key", "ollama"))
     parser.add_argument("--api_base", type=str, default="http://localhost:1234/v1")
     parser.add_argument("--model_type", choices=["chat", "completion"], default="chat")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max_tokens", type=int, default=2048)
-    parser.add_argument("--out_json", type=Path, required=True)
+    parser.add_argument("--out_json", type=Path, default=Path("./metrics.json"), help="Output metrics JSON file.")
 
     args = parser.parse_args()
 
@@ -442,27 +409,41 @@ def main():
         api_base=args.api_base,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        model_kwargs={"stop": "\n"},
+        stop=["\n"],  # moved out of model_kwargs
     )
+    print("DEBUG_POINT", inspect.currentframe().f_lineno)
+
+    # # Test model before running experiment
+    # test_prompt = "Say hello, this is a test."
+    # resp = model.model.invoke([HumanMessage(content=test_prompt)])
+    # print("Test response:", getattr(resp, "content", resp))
+    # exit(0)
 
     exp = SESBiasExperiment(model=model, prompt_style=args.prompt_style)
 
-    # Data
-    examples = exp.read_data(args.base_data, args.city_data)
+    # 1. Load base hate speech dataset
+    base_data = exp.read_base_data()
 
-    # Few-shot seed if requested
-    few_pos: List[Example] = []
-    few_neg: List[Example] = []
-    if args.shot_mode == "few":
-        few_pos, few_neg = _choose_fewshot(examples)
+    # 2. Load city data (JSON only)
+    city_data = exp.read_city_data_json(args.city_data)
 
-    # Run
+    # 3. Expand into full experimental dataset
+    examples = exp.create_augmented_examples(base_data, city_data)
+
+    # 4. Optional: select few-shot seeds
+    # few_pos, few_neg = [], []
+    # if args.shot_mode == "few":
+    #     few_pos, few_neg = _choose_fewshot(examples)
+
+    # 5. Run predictions
     preds, targets = exp.prediction(
         data=examples,
         shot_mode=args.shot_mode,
-        few_pos=few_pos,
-        few_neg=few_neg,
+        # few_pos=few_pos,
+        # few_neg=few_neg,
     )
+
+    # 6. Evaluate
     exp.evaluate(preds, targets, args.out_json)
 
 

@@ -1,0 +1,22 @@
+# Ignore Python cache and system files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code and editor folders
+.vscode/
+
+# Conda system files
+.conda/
+
+# Other common system files
+.DS_Store
+Thumbs.db
+
+# Ignore environment files
+.env
+.venv/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
