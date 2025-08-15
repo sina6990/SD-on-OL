@@ -4,3 +4,5 @@ langchain-openai
 openai
 scikit-learn
 datasets
+transformers
+python-dotenv

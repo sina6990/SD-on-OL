@@ -21,8 +21,10 @@ import random
 from datasets import load_dataset
 from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
-from langchain_openai import ChatOpenAI, OpenAI
-from langchain.schema import HumanMessage
+
+# Import custom LLM wrappers
+from openAI_llm import AnyOpenAILLM
+from hf_local_llm import HFLocalLLM
 
 # Metrics
 from sklearn.metrics import (
@@ -34,48 +36,8 @@ from sklearn.metrics import (
 )
 
 
+
 PromptStyle = Literal["explicit", "implicit"]
-
-
-class AnyOpenAILLM:
-    """
-    Minimal wrapper around LangChain's ChatOpenAI/OpenAI that matches your prior code.
-    Falls back with a clear error if LangChain is unavailable.
-    """
-
-    def __init__(self, *args, **kwargs):
-        self.model_type = kwargs.get("model_type", "chat")
-        model_name = kwargs.get("model_name")
-        api_key = kwargs.get("api_key", "ollama")
-        api_base = kwargs.get("api_base", "http://localhost:1234/v1")
-        temperature = kwargs.get("temperature", 0)
-        max_tokens = kwargs.get("max_tokens", 10048)
-        model_kwargs = kwargs.get("model_kwargs", {})
-
-        if self.model_type == "completion":
-            self.model = OpenAI(
-                model_name=model_name,
-                openai_api_key=api_key,
-                openai_api_base=api_base,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **model_kwargs,
-            )
-        else:
-            self.model = ChatOpenAI(
-                model_name=model_name,
-                openai_api_key=api_key,
-                openai_api_base=api_base,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                model_kwargs=model_kwargs,
-            )
-
-    def __call__(self, prompt: str) -> str:
-        if self.model_type == "completion":
-            return str(self.model(prompt))
-        else:
-            return str(self.model([HumanMessage(content=prompt)]).content)
 
 class SESBiasExperiment:
     """
@@ -139,7 +101,7 @@ class SESBiasExperiment:
             print("DEBUG_POINT", inspect.currentframe().f_lineno)
             ds = load_dataset(dataset_name, split=split)
 
-            # ds = ds.select(range(5))
+            ds = ds.select(range(5))
 
             rows: List[Dict[str, str]] = []
             for r in ds:
@@ -273,8 +235,7 @@ class SESBiasExperiment:
                 )
 
             # Send to model
-            resp = self.model.model.invoke([HumanMessage(content=full_prompt)])
-            raw_output = getattr(resp, "content", resp)
+            raw_output = self.model(full_prompt)
 
             # Try to parse JSON
             try:
@@ -361,6 +322,7 @@ def _choose_fewshot(
 
 def main():
     parser = argparse.ArgumentParser(description="SES bias experiment for hate-speech classification")
+    parser.add_argument("--backend", choices=["openai", "hf_local"], default="openai")
     parser.add_argument("--base_data", type=Path, required=False, help="base hate speach dataset -string -label")
     parser.add_argument("--city_data", type=Path, default=Path("MSAs.json"), help="City/MSA data JSON file (default: MSAs.json)")
     parser.add_argument("--prompt_style", choices=["explicit", "implicit"], default="implicit")
@@ -382,21 +344,32 @@ def main():
     random.seed(seed)
 
     # Build model
-    model = AnyOpenAILLM(
-        model_type=args.model_type,
-        model_name=args.model_name,
-        api_key=args.api_key,
-        api_base=args.api_base,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-        stop=["\n"],  # moved out of model_kwargs
-    )
+    if args.backend == "openai":
+        model = AnyOpenAILLM(
+            model_type=args.model_type,
+            model_name=args.model_name,
+            api_key=args.api_key,
+            api_base=args.api_base,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            stop=["\n"],  # moved out of model_kwargs
+        )
+    else:
+        if not args.hf_model_name:
+            raise ValueError("When --backend hf_local, you must set --hf_model_name.")
+        model = HFLocalLLM(
+            model_name=args.hf_model_name,
+            hf_token=args.hf_token,  # or env HF_TOKEN
+            dtype=args.hf_dtype,
+            device_map=args.hf_device_map,
+            max_new_tokens=args.hf_max_new_tokens,
+            temperature=args.hf_temperature,
+            top_p=args.hf_top_p,
+            do_sample=args.hf_do_sample,
+            load_in_4bit=args.hf_load_in_4bit,
+            trust_remote_code=args.hf_trust_remote_code,
+        )
     print("DEBUG_POINT", inspect.currentframe().f_lineno)
-
-    # Test model before running experiment
-    # test_prompt = "Say hello, this is a test."
-    # resp = model.model.invoke([HumanMessage(content=test_prompt)])
-    # print("Test response:", getattr(resp, "content", resp))
 
     exp = SESBiasExperiment(model=model, prompt_style=args.prompt_style)
 
