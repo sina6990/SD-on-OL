@@ -20,3 +20,5 @@ Thumbs.db
 
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+
+metrics.json
