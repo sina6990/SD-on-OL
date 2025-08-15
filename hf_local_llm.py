@@ -22,7 +22,7 @@ class HFLocalLLM:
         dtype: Literal["auto", "bfloat16", "float16"] = "auto",
         device_map: str = "auto",
         max_new_tokens: int = 64,
-        temperature: float = 0.0,
+        temperature: Optional[float] = None,
         top_p: float = 1.0,
         do_sample: bool = False,
         load_in_4bit: bool = False,
