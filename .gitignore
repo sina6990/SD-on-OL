@@ -22,3 +22,5 @@ Thumbs.db
 .ipynb_checkpoints/
 
 metrics.json
+
+*.log

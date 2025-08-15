@@ -101,7 +101,7 @@ class SESBiasExperiment:
             print("DEBUG_POINT", inspect.currentframe().f_lineno)
             ds = load_dataset(dataset_name, split=split)
 
-            ds = ds.select(range(5))
+            # ds = ds.select(range(5))
 
             rows: List[Dict[str, str]] = []
             for r in ds:
@@ -322,7 +322,7 @@ def _choose_fewshot(
 
 def main():
     parser = argparse.ArgumentParser(description="SES bias experiment for hate-speech classification")
-    parser.add_argument("--backend", choices=["openai", "hf_local"], default="openai")
+    parser.add_argument("--backend", choices=["openai", "hf_local"], default="hf_local")
     parser.add_argument("--base_data", type=Path, required=False, help="base hate speach dataset -string -label")
     parser.add_argument("--city_data", type=Path, default=Path("MSAs.json"), help="City/MSA data JSON file (default: MSAs.json)")
     parser.add_argument("--prompt_style", choices=["explicit", "implicit"], default="implicit")
@@ -334,6 +334,18 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max_tokens", type=int, default=2048)
     parser.add_argument("--out_json", type=Path, default=Path("./metrics.json"), help="Output metrics JSON file.")
+
+    # parser.add_argument("--hf_model_name", type=str, default="meta-llama/Llama-3.2-1B")
+    parser.add_argument("--hf_model_name", type=str, default="tiiuae/Falcon-H1-1.5B-Instruct")
+    parser.add_argument("--hf_token", type=str, default=os.getenv("HF_TOKEN"))
+    parser.add_argument("--hf_dtype", choices=["auto", "bfloat16", "float16"], default="auto")
+    parser.add_argument("--hf_device_map", type=str, default="auto")
+    parser.add_argument("--hf_max_new_tokens", type=int, default=64)
+    parser.add_argument("--hf_temperature", type=float, default=0.0)
+    parser.add_argument("--hf_top_p", type=float, default=1.0)
+    parser.add_argument("--hf_do_sample", action="store_true")
+    parser.add_argument("--hf_load_in_4bit", action="store_true")
+    parser.add_argument("--hf_trust_remote_code", action="store_true", default=True)
 
     args = parser.parse_args()
 
