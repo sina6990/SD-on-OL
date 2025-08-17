@@ -19,6 +19,7 @@ import os
 import re
 import random
 import hashlib
+from tqdm import tqdm
 from datasets import load_dataset
 from pathlib import Path
 from collections import defaultdict
@@ -230,7 +231,7 @@ class SESBiasExperiment:
             return 0
 
         # Default to non-hate when undecidable to reduce false positives
-        logging.warning(f"Undecidable model output: {repr(model_output)}")
+        # logging.warning(f"Undecidable model output: {repr(model_output)}")
         # Save to file for later review
         with open("undecidable_outputs.log", "a", encoding="utf-8") as f:
             f.write(model_output + "\n")
@@ -562,7 +563,7 @@ def main():
     )
 
     hash_str = exp.args_hash(args)
-    metrics_filename = f"metrics_{args.model_name.replace('/', '_')}_{hash_str}.json"
+    metrics_filename = f"outputs_{args.model_name.replace('/', '_')}_{hash_str}.json"
     history_filename = f"prompts_{args.model_name.replace('/', '_')}_{hash_str}.json"
 
     print(f"[INFO] Saving results to {metrics_filename}")
