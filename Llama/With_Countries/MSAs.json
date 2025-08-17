@@ -1,0 +1,127 @@
+{
+    "United States": {
+        "Large": {
+            "New York": {
+                "population": 19940274,
+                "householdIncome": "95220 USD"
+            },
+            "Los Angeles": {
+                "population": 12927614,
+                "householdIncome": "91960 USD"
+            }
+        },
+        "Medium": {
+            "San Jose": {
+                "population": 1995484,
+                "householdIncome": "153202 USD"
+            },
+            "San Antonio": {
+                "population": 2763006,
+                "householdIncome": "73195 USD"
+            }
+        },
+        "Small": {
+            "Bridgeport": {
+                "population": 972679,
+                "householdIncome": "111058 USD"
+            },
+            "McAllen": {
+                "population": 914820,
+                "householdIncome": "53661 USD"
+            }
+        },
+        "Source": {
+            "population": [
+                "https://en.wikipedia.org/wiki/Metropolitan_statistical_area#United_States",
+                2024
+            ],
+            "householdIncome":[
+                "https://data.census.gov/table/ACSDP1Y2023.DP03?q=DP03:+SELECTED+ECONOMIC+CHARACTERISTICS&g=310XX00US14860,31080,32580,35620,41700,41940",
+                2023
+            ]
+        }
+    },
+    "Canada": {
+        "Large": {
+            "Toronto": {
+                "population": 6202225,
+                "householdIncome": "97000 CAD"
+            },
+            "Montreal": {
+                "population": 4291732,
+                "householdIncome": "76000 CAD"
+            }
+        },
+        "Medium": {
+            "Ottawa": {
+                "population": 1488307,
+                "householdIncome": "98000 CAD"
+            },
+            "Edmonton": {
+                "population": 1418118,
+                "householdIncome": "96000 CAD"
+            }
+        },
+        "Small": {
+            "Kingstone": {
+                "population": 172546,
+                "householdIncome": "83000 CAD"
+            },
+            "Sherbrooke": {
+                "population": 227398,
+                "householdIncome": "65000 CAD"
+            }
+        },
+        "Source": {
+            "population": [
+                "https://en.wikipedia.org/wiki/List_of_census_metropolitan_areas_and_agglomerations_in_Canada",
+                2021
+            ],
+            "householdIncome":[
+                "https://en.wikipedia.org/wiki/List_of_cities_in_Canada_by_median_household_income",
+                2020
+            ]
+        }
+    },
+    "Australia": {
+        "Large": {
+            "Sydney": {
+                "population": 5231147,
+                "householdIncome": "108004 AUD"
+            },
+            "Melbourne": {
+                "population": 4917750,
+                "householdIncome": "98852 AUD"
+            }
+        },
+        "Medium": {
+            "Perth": {
+                "population": 2116647,
+                "householdIncome": "96980 AUD"
+            },
+            "Adelaide": {
+                "population": 1387290,
+                "householdIncome": "80496 AUD"
+            }
+        },
+        "Small": {
+            "Canberra": {
+                "population": 490517,
+                "householdIncome": "122200 AUD"
+            },
+            "Hobart": {
+                "population": 247086,
+                "householdIncome": "80184 AUD"
+            }
+        },
+        "Source": [
+            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/1GSYD",
+            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/2GMEL",
+            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/5GPER",
+            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/4GADE",
+            "https://www.abs.gov.au/census/find-census-data/quickstats/2021/8001",
+            "https://abs.gov.au/census/find-census-data/quickstats/2021/6GHOB",
+            2021
+        ]
+    }
+}

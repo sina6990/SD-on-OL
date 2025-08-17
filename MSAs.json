@@ -1,5 +1,5 @@
 {
-    "US": {
+    "United States": {
         "Large": {
             "New York": {
                 "population": 19940274,
@@ -53,19 +53,19 @@
             }
         },
         "Medium": {
-            "Calgary": {
-                "population": 1481806,
-                "householdIncome": "100000 CAD"
+            "Ottawa": {
+                "population": 1488307,
+                "householdIncome": "98000 CAD"
             },
-            "Quebec City": {
-                "population": 839311,
-                "householdIncome": "76500 CAD"
+            "Edmonton": {
+                "population": 1418118,
+                "householdIncome": "96000 CAD"
             }
         },
         "Small": {
-            "Hamilton": {
-                "population": 785184,
-                "householdIncome": "91000 CAD"
+            "Kingstone": {
+                "population": 172546,
+                "householdIncome": "83000 CAD"
             },
             "Sherbrooke": {
                 "population": 227398,
