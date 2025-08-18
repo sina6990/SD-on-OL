@@ -23,5 +23,6 @@ Thumbs.db
 
 metrics*
 prompts*
+outputs*
 
 *.log

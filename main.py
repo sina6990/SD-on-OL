@@ -103,7 +103,7 @@ class SESBiasExperiment:
             """
             ds = load_dataset(dataset_name, split=split)
 
-            # ds = ds.select(range(5))
+            ds = ds.select(range(5))
 
             rows: List[Dict[str, str]] = []
             for r in ds:
@@ -231,7 +231,7 @@ class SESBiasExperiment:
             return 0
 
         # Default to non-hate when undecidable to reduce false positives
-        # logging.warning(f"Undecidable model output: {repr(model_output)}")
+        logging.warning(f"Undecidable model output: {repr(model_output)}")
         # Save to file for later review
         with open("undecidable_outputs.log", "a", encoding="utf-8") as f:
             f.write(model_output + "\n")
@@ -308,65 +308,86 @@ class SESBiasExperiment:
         """
         few_pos = few_pos or []
         few_neg = few_neg or []
-        results = []
-        history = []
 
+        # 1. Build full prompt dataset
+        prompt_items = []
         for base_idx, base_ex in enumerate(base_data):
-            # Base prediction (always zero-shot)
+            # Base prompt (always zero-shot)
             base_prompt = self._build_prompt(base_ex["text"], "zero", few_pos, few_neg)
-            base_raw_output = self.model(base_prompt)
-            base_pred = self._postprocess_label(str(base_raw_output))
-
-            # Track base prompt/output
-            history.append({
-                "base_idx": base_idx,
+            prompt_items.append({
                 "type": "base",
+                "base_idx": base_idx,
                 "prompt": base_prompt,
-                "output": str(base_raw_output),
-                "pred_label": base_pred,
                 "label": base_ex["label"]
             })
 
-            # Start entry
+        # Augmented prompts
+        for aug_ex in aug_data:
+            prompt = self._build_prompt(aug_ex["prompt"], aug_ex["shot_mode"], few_pos, few_neg)
+            prompt_items.append({
+                "type": "augmented",
+                "base_idx": aug_ex["base_idx"],
+                "style": aug_ex["style"],
+                "shot_mode": aug_ex["shot_mode"],
+                "prompt": prompt,
+                "label": aug_ex["label"]
+            })
+
+        # 2. Run model on all prompts (batch or chunked)
+        # If your model supports batch, use it here. Otherwise, process sequentially.
+        # For now, process sequentially:
+        raw_outputs = [self.model(item["prompt"]) for item in tqdm(prompt_items, desc="Model Inference")]
+
+        # 3. Post-process and reconstruct results/history
+        history = []
+        # Prepare results structure
+        results_dict = {}
+        for base_idx, base_ex in enumerate(base_data):
             entry = {
-                "base": base_pred,
+                "base": None,  # to be filled
                 "label": base_ex["label"]
             }
-            # Prepare style/shot_mode containers
             for style in styles:
                 entry[style] = {}
                 for mode in shot_modes:
                     entry[style][mode] = {"preds": []}
+            results_dict[base_idx] = entry
 
-            # Get matching augmented examples for this base
-            matching_augs = [a for a in aug_data if a["base_idx"] == base_idx]
+        # Assign outputs
+        for i, item in enumerate(prompt_items):
+            output = str(raw_outputs[i])
+            pred_label = self._postprocess_label(output)
+            item["output"] = output
+            item["pred_label"] = pred_label
 
-            # Process predictions
-            for style in styles:
-                for mode in shot_modes:
-                    subset = [
-                        a for a in matching_augs
-                        if a["style"] == style and a["shot_mode"] == mode
-                    ]
-                    for ex in subset:
-                        prompt = self._build_prompt(ex["prompt"], mode, few_pos, few_neg)
-                        raw_output = self.model(prompt)
-                        pred_label = self._postprocess_label(str(raw_output))
-                        entry[style][mode]["preds"].append(pred_label)
-                        # Track augmented prompt/output
-                        history.append({
-                            "base_idx": base_idx,
-                            "type": "augmented",
-                            "style": style,
-                            "shot_mode": mode,
-                            "prompt": prompt,
-                            "output": str(raw_output),
-                            "pred_label": pred_label,
-                            "label": ex["label"]
-                        })
+            if item["type"] == "base":
+                # Fill base prediction
+                results_dict[item["base_idx"]]["base"] = pred_label
+                # Track history
+                history.append({
+                    "base_idx": item["base_idx"],
+                    "type": "base",
+                    "prompt": item["prompt"],
+                    "output": output,
+                    "pred_label": pred_label,
+                    "label": item["label"]
+                })
+            else:
+                # Augmented
+                results_dict[item["base_idx"]][item["style"]][item["shot_mode"]]["preds"].append(pred_label)
+                history.append({
+                    "base_idx": item["base_idx"],
+                    "type": "augmented",
+                    "style": item["style"],
+                    "shot_mode": item["shot_mode"],
+                    "prompt": item["prompt"],
+                    "output": output,
+                    "pred_label": pred_label,
+                    "label": item["label"]
+                })
 
-            results.append(entry)
-
+        # Convert results_dict to list
+        results = [results_dict[idx] for idx in sorted(results_dict.keys())]
         return results, history
 
     @staticmethod
@@ -477,7 +498,7 @@ def main():
     parser.add_argument("--hf_token", type=str, default=os.getenv("HF_TOKEN"))
     parser.add_argument("--hf_dtype", choices=["auto", "bfloat16", "float16"], default="auto")
     parser.add_argument("--hf_device_map", type=str, default="auto")
-    parser.add_argument("--hf_max_new_tokens", type=int, default=64)
+    parser.add_argument("--hf_max_new_tokens", type=int, default=512)
     parser.add_argument("--hf_temperature", type=float, default=0.0)
     parser.add_argument("--hf_top_p", type=float, default=1.0)
     parser.add_argument("--hf_do_sample", action="store_true")
