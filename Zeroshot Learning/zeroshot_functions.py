@@ -262,8 +262,8 @@ def read_data():
     random_seed = 42
     dataframe = dataframe.sample(frac=1, random_state=random_seed).reset_index(drop=True)
 
-    hate_samples = dataframe[dataframe['labels'] == 1].sample(n=100, random_state=random_seed)
-    non_hate_samples = dataframe[dataframe['labels'] == 0].sample(n=100, random_state=random_seed)
+    hate_samples = dataframe[dataframe['labels'] == 1].sample(n=1500, random_state=random_seed)
+    non_hate_samples = dataframe[dataframe['labels'] == 0].sample(n=1500, random_state=random_seed)
     dataframe = pd.concat([hate_samples, non_hate_samples]).reset_index(drop=True)
     
     logging.info(f"-----HateSpeech Dataset Information-----")
